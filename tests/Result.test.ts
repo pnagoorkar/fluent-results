@@ -1,4 +1,5 @@
 import {Result} from '../src/Result';
+import { TestReason } from './setup/TestReason';
 
 describe("Result.try", () =>{
 
@@ -34,7 +35,7 @@ describe('Result.bind', () => {
         expect(result.value).toBe(42);
     });
 
-    it("should not execute actions past the point of failure", () =>{
+    it("should not execute actions past the point of failure", () => {
         let pi = 3.14;
         const result = Result.try(() => { })
                              .bind(() => 42)
@@ -76,4 +77,24 @@ describe('Result.bind', () => {
         expect(result.isSuccess).toBe(false);
         expect(() => {let v = result.value;}).toThrow("To inject value into a parameterized function, first call a function that returns a value for retention");
     });
-  })
+  });
+
+  describe('Result.addReasonIfFailed', () => { 
+    it("should capture reasons when called immediately after the point of failure", () => {
+        const result = Result.try(() => { throw new Error("Intentionally thrown exception"); })
+                             .addReasonIfFailed(new TestReason("This is a test reason"));
+        expect(result).not.toBeNull();
+        expect(result.isSuccess).toBe(false);
+        expect(result.reasons.filter(reason => reason instanceof TestReason).length).toBe(1);
+    });
+
+    it("should not capture reasons when not called immediately after the point of failure", () => {
+        const result = Result.try(() => { throw new Error("Intentionally thrown exception"); })
+                             .bind(() => { })
+                             .addReasonIfFailed(new TestReason("This is a test reason"));
+        expect(result).not.toBeNull();
+        expect(result.isSuccess).toBe(false);
+        expect(result.reasons.filter(reason => reason instanceof TestReason).length).toBe(0);
+    });
+
+   });
