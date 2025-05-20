@@ -4,7 +4,7 @@ import { ExceptionalError } from './ExceptionalError';
 
 export class Result {
     protected _reasons: AReason[] = [];
-    private states: any[] = []; // will hold the state of last executed function that did not result in an exception
+    private stateCache: any[] = []; // will hold the state of last executed function that did not result in an exception
 
     get isSuccess(): boolean {
         return !this.isFailed;
@@ -13,8 +13,8 @@ export class Result {
         return this._reasons.some(reason => reason instanceof AError);
     }
     get currentState(): any {
-        if (this.states.length === 1) {
-            return this.states[0];
+        if (this.stateCache.length === 1) {
+            return this.stateCache[0];
         }
         else {
             throw new Error("To inject state into a parameterized function, first call a function that returns a state for retention");
@@ -24,44 +24,47 @@ export class Result {
     get reasons(): AReason[] {
         return this._reasons.slice();
     }
+    get errors(): AError[] {
+        return this._reasons.filter(reason => reason instanceof AError);
+    }
 
     static try(action: () => any): Result {
         let result = new Result();
         let retVal = undefined;
-        let retResult = false;
+        let captureState = false;
 
         try {
             retVal = action();
-            retResult = true;
+            captureState = true;
         }
         catch (e) {
             result._reasons.push(new ExceptionalError(e));
         }
         finally {
-            if (retResult) result.retainValue(retVal); // retain value only if executing the action did not result in an exception
+            if (captureState) result.cacheState(retVal); // retain state only if executing the action did not result in an exception
             return result;
         }
     }
 
-    private retainValue(value: any) {
-        while (this.states.length > 0) this.states.pop();
-        this.states.unshift(value);
+    private cacheState(value: any) {
+        while (this.stateCache.length > 0) this.stateCache.pop();
+        this.stateCache.unshift(value);
     }
 
     bind(func: (() => any) | ((input: any) => any)): Result {
         let retVal = undefined;
-        let retResult = false;
+        let captureState = false;
         try {
             if (this.isSuccess) {
                 retVal = func.length === 0 ? (func as () => any)() : (func as (input: any) => any)(this.currentState);
-                retResult = true;
+                captureState = true;
             }
         }
         catch (e) {
             this._reasons.push(new ExceptionalError(e));
         }
         finally {
-            if (retResult) this.retainValue(retVal); // retain value only if the func execution did not result in an exception
+            if (captureState) this.cacheState(retVal); // retain state only if the func execution did not result in an exception
             return this;
         }
     }

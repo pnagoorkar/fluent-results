@@ -146,5 +146,13 @@ describe('Result.failIf', () => {
         expect(result.isSuccess).toBe(true);
         expect(result.reasons.filter(reason => reason instanceof TestError).length).toBe(0);
     });
-
 });
+
+describe('Reason.errors', () => {
+    it("should return only errors", () => {
+        const result = Result.try(() => { throw new Error(); });
+        expect(result).not.toBeNull();
+        expect(result.isSuccess).toBe(false);
+        expect(result.errors.length).toBe(1);
+    });
+})
