@@ -1,67 +1,63 @@
-import {AReason} from './AReason';
-import {AError} from './AError';
+import { AReason } from './AReason';
+import { AError } from './AError';
 import { ExceptionalError } from './ExceptionalError';
 
-export class Result{
+export class Result {
     protected _reasons: AReason[] = [];
-    private values: any[] = []; // will hold the value of last executed function that did not result in an exception
-    private numberOfBindsSinceLastSuccess = 0;
+    private states: any[] = []; // will hold the state of last executed function that did not result in an exception
 
-    get isSuccess(): boolean{
+    get isSuccess(): boolean {
         return !this.isFailed;
-    } 
-    get isFailed(): boolean{
+    }
+    get isFailed(): boolean {
         return this._reasons.some(reason => reason instanceof AError);
     }
-    get value() : any{
-        if(this.values.length === 1){
-            return this.values[0];
+    get currentState(): any {
+        if (this.states.length === 1) {
+            return this.states[0];
         }
         else {
-            throw new Error("To inject value into a parameterized function, first call a function that returns a value for retention");            
+            throw new Error("To inject state into a parameterized function, first call a function that returns a state for retention");
         }
     }
 
-    get reasons() : AReason[]{
+    get reasons(): AReason[] {
         return this._reasons.slice();
     }
 
-    static try(action : () => any) : Result {
+    static try(action: () => any): Result {
         let result = new Result();
         let retVal = undefined;
         let retResult = false;
 
-        try{
-            retVal = action(); 
+        try {
+            retVal = action();
             retResult = true;
         }
-        catch(e){
+        catch (e) {
             result._reasons.push(new ExceptionalError(e));
         }
-        finally{
+        finally {
             if (retResult) result.retainValue(retVal); // retain value only if executing the action did not result in an exception
             return result;
         }
     }
-    
+
     private retainValue(value: any) {
-        while(this.values.length > 0) this.values.pop();
-        this.values.unshift(value);
+        while (this.states.length > 0) this.states.pop();
+        this.states.unshift(value);
     }
 
-    bind(func: (() => any) | ((input: any) => any)) : Result{
+    bind(func: (() => any) | ((input: any) => any)): Result {
         let retVal = undefined;
         let retResult = false;
-        try{
-            if(this.isSuccess){
-                retVal = func.length === 0 ? (func as () => any)() : (func as (input: any) => any)(this.value);
-                retResult = true;     
-            }
-            else {
-                this.numberOfBindsSinceLastSuccess++;
+        try {
+            if (this.isSuccess) {
+                retVal = func.length === 0 ? (func as () => any)() : (func as (input: any) => any)(this.currentState);
+                retResult = true;
             }
         }
-        catch(e) {
+        catch (e) {
             this._reasons.push(new ExceptionalError(e));
         }
         finally {
@@ -70,37 +66,36 @@ export class Result{
         }
     }
 
-    addReasonIfFailed(reason: AReason) : Result{
-        if(this.isFailed && this.numberOfBindsSinceLastSuccess == 0){
-            this._reasons.unshift(reason);
-        }
-        return this;
-    }
-
-    okIf(func: () => boolean, error: AError) : Result{
-        try{
-            if(!func()){
-                this._reasons.push(error);
+    okIf(predicate: (() => boolean) | ((input: any) => boolean), error: AError): Result {
+        try {
+            if (this.isSuccess) {
+                var res = predicate.length === 0 ? (predicate as () => any)() : (predicate as (input: any) => any)(this.currentState);
+                if (res !== true) {
+                    this._reasons.push(error);
+                }
             }
         }
-        catch(e) {
+        catch (e) {
             this._reasons.push(new ExceptionalError(e));
         }
-        finally{
+        finally {
             return this;
         }
     }
 
-    failIf(func: () => boolean, error: AError) : Result{
-        try{
-            if(func()){
-                this._reasons.push(error);
+    failIf(predicate: (() => boolean) | ((input: any) => boolean), error: AError): Result {
+        try {
+            if (this.isSuccess) {
+                var res = predicate.length === 0 ? (predicate as () => any)() : (predicate as (input: any) => any)(this.currentState);
+                if (res === true) {
+                    this._reasons.push(error);
+                }
             }
         }
-        catch(e) {
+        catch (e) {
             this._reasons.push(new ExceptionalError(e));
         }
-        finally{
+        finally {
             return this;
         }
     }
