@@ -1,7 +1,7 @@
 {
   "name": "fluent-results",
   "version": "1.0.0",
-  "description": "",
+  "description": "A tiny, dependency‑free helper for propagating success/failure without `try / catch` soup",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
@@ -9,8 +9,8 @@
     "test": "jest"
   },
   "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "author": "prashant.nagoorkar@gmail.com",
+  "license": "MIT",
   "files": [
     "dist"
   ],
