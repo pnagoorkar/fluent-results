@@ -3,97 +3,90 @@ import { AError } from './AError';
 import { ExceptionalError } from './ExceptionalError';
 
 /**
- * Represents the outcome of a pipeline of operations executed in a *railway‑oriented* fashion.
- *
- * A `Result` starts out *successful* and accumulates {@link AReason | reasons}—
+ * `Result` represents the outcome **and** the flowing state of a pipeline that can
+ * short‑circuit on the first error ("railway‑oriented programming").
+ * 
+ * A `Result` starts out *successful* and accumulates {@link AReason | reasons};
  * any {@link AError | error} automatically flips the result into the *failed* state.
  *
- * • Inspired by the .NET FluentResults pattern, but adapted for JavaScript / TypeScript.
- * • Supports short‑circuiting: once failed, subsequent {@link bind} / {@link okIf} / {@link failIf} calls are ignored.
- * • Keeps the **current state/value** flowing between chained steps without global variables.
  */
-export class Result {
-    /**
-     * All informational messages and errors collected so far.
-     * An element that `instanceof AError` marks the {@link Result} as failed.
-     */
+export class Result<TState = any> {
+
+    /** Informational messages *and* errors gathered so far. */
     protected _reasons: AReason[] = [];
-
-    /**
-     * Internal single‑slot cache that holds the most recent value
-     * returned by a delegate that completed *without* throwing.
-     */
-    private stateCache: any[] = [];
-
+    /** Single‑slot cache for the latest successful value. */
+    private stateCache: TState[] = [];
     /** `true` when *no* {@link AError} has been recorded. */
-    get isSuccess(): boolean {
+    public get isSuccess(): boolean {
         return !this.isFailed;
     }
-
-    /** `true` when **at least one** {@link AError} has been recorded. */
-    get isFailed(): boolean {
-        return this._reasons.some(reason => reason instanceof AError);
+    /** `true` when **at least one** {@link AError} exists. */
+    public get isFailed(): boolean {
+        return this._reasons.some((r) => r instanceof AError);
     }
-
 
     /**
      * The most recent value produced by the pipeline.
      * @throws {Error}  If no value has been cached yet (typically because the pipeline only ran parameter‑less steps).
      */
-    get currentState(): any {
+    public get currentState(): TState {
         if (this.stateCache.length === 1) {
             return this.stateCache[0];
         }
-        else {
-            throw new Error("To inject state into a parameterized function, first call a function that returns a state for retention");
-        }
+        throw new Error(
+            'No state present. Ensure a previous delegate returns a value before attempting to read currentState.'
+        );
     }
-
-    /** Immutable copy of all collected informational messages and errors. */
-    get reasons(): AReason[] {
+    /** Immutable copy of informational reasons **and** errors. */
+    public get reasons(): AReason[] {
         return this._reasons.slice();
     }
-
-    /** Convenience accessor limited to objects that are actual {@link AError} instances. */
-    get errors(): AError[] {
-        return this._reasons.filter(reason => reason instanceof AError);
+    /** Convenience subset of {@link reasons} limited to errors. */
+    public get errors(): AError[] {
+        return this._reasons.filter((r) => r instanceof AError);
     }
-
     /**
    * Executes `action` and wraps its outcome into a new **root** `Result`.
    *
    * • If `action` throws, the exception is captured as an {@link ExceptionalError}.
    * • If it completes successfully, the return value is stored as {@link currentState}.
    *
-   * @param action  A synchronous delegate that may return a value and/or throw.
+   * @param action A synchronous delegate that may return a value and/or throw.
    */
-    static try(action: () => any): Result {
-        let result = new Result();
-        let retVal = undefined;
-        let captureState = false;
+    public static try<T>(action: () => T): Result<T> {
+        const result = new Result<T>();
 
         try {
-            retVal = action();
-            captureState = true;
+            result.cacheState(action());
         }
         catch (e) {
             result._reasons.push(new ExceptionalError(e));
         }
         finally {
-            if (captureState) result.cacheState(retVal); // retain state only if executing the action did not result in an exception
             return result;
         }
     }
-
     /**
-     * Internal helper—overwrites the single‑slot {@link stateCache}.
-     * Not exposed publicly on purpose.
-     */
-    private cacheState(value: any) {
-        while (this.stateCache.length > 0) this.stateCache.pop();
-        this.stateCache.unshift(value);
+   * Executes `action` and wraps its awaited outcome into a new **root** `Result`.
+   *
+   * • If `action` throws, the exception is captured as an {@link ExceptionalError}.
+   * • If it completes successfully, the awaited outcome is stored as {@link currentState}.
+   *
+   * @param action A synchronous delegate that may return a value and/or throw.
+   */
+    public static async tryAsync<T>(action: () => Promise<T>): Promise<Result<T>> {
+        const result = new Result<T>();
+        try {
+            const out = await action();
+            result.cacheState(out);
+        }
+        catch (e) {
+            result._reasons.push(new ExceptionalError(e));
+        }
+        finally {
+            return result;
+        }
     }
-
     /**
      * Chains another synchronous function into the pipeline.
      *
@@ -103,22 +96,44 @@ export class Result {
      *
      * @returns **this** so that calls can be fluently chained.
      */
-    bind(func: (() => any) | ((input: any) => any)): Result {
-        let retVal = undefined;
-        let captureState = false;
-        try {
-            if (this.isSuccess) {
-                retVal = func.length === 0 ? (func as () => any)() : (func as (input: any) => any)(this.currentState);
-                captureState = true;
+    public bind<TRet>(func: (() => TRet) | ((input: TState) => TRet)): Result<TRet> {
+        if (this.isSuccess) {
+            try {
+                const out = func.length === 0
+                    ? (func as () => TRet)()
+                    : (func as (i: TState) => TRet)(this.currentState);
+                (this as unknown as Result<TRet>).cacheState(out);
+            }
+            catch (e) {
+                this._reasons.push(new ExceptionalError(e));
             }
         }
-        catch (e) {
-            this._reasons.push(new ExceptionalError(e));
+        return this as unknown as Result<TRet>;
+    }
+
+    /**
+     * Chains another synchronous function into the pipeline and captures its awaited outcome as {@link currentState}.
+     *
+     * @param func A delegate returning a promise.
+     *              • If the previous step succeeded, its return value becomes the input when `func` has an arity of **1**.
+     *              • If the previous step failed, `func` is **skipped**.
+     *
+     * @returns **this** so that calls can be fluently chained.
+     */
+    public async bindAsync<TRet>(func: (() => Promise<TRet>) | ((input: TState) => Promise<TRet>)): Promise<Result<TRet>> {
+        if (this.isSuccess) {
+            try {
+                const out = func.length === 0
+                    ? await (func as () => Promise<TRet>)()
+                    : await (func as (i: TState) => Promise<TRet>)(this.currentState);
+
+                (this as unknown as Result<TRet>).cacheState(out);
+            }
+            catch (e) {
+                this._reasons.push(new ExceptionalError(e));
+            }
         }
-        finally {
-            if (captureState) this.cacheState(retVal); // retain state only if the func execution did not result in an exception
-            return this;
-        }
+        return this as unknown as Result<TRet>;
     }
 
     /**
@@ -129,22 +144,44 @@ export class Result {
      *
      * @returns **this** for chaining.
      */
-    okIf(predicate: (() => boolean) | ((input: any) => boolean), error: AError): Result {
-        try {
-            if (this.isSuccess) {
-                var res = predicate.length === 0 ? (predicate as () => any)() : (predicate as (input: any) => any)(this.currentState);
-                if (res !== true) {
-                    this._reasons.push(error);
-                }
+    public okIf(predicate: (() => boolean) | ((input: TState) => boolean), error: AError): Result<TState> {
+        if (this.isSuccess) {
+            try {
+                const pass = predicate.length === 0
+                    ? (predicate as () => boolean)()
+                    : (predicate as (i: TState) => boolean)(this.currentState);
+                if (!pass) this._reasons.push(error);
+            }
+            catch (e) {
+                this._reasons.push(new ExceptionalError(e));
             }
         }
-        catch (e) {
-            this._reasons.push(new ExceptionalError(e));
-        }
-        finally {
-            return this;
-        }
+        return this;
     }
+
+    /**
+     * Keeps the pipeline successful **only if** the `predicate` evaluates to `true`.
+     *
+     * @param predicate A function returning promise that returns boolean when awaited (optionally with `currentState` input).
+     * @param error      Error instance to push when the predicate fails.
+     *
+     * @returns **this** for chaining.
+     */
+    public async okIfAsync(predicate: (() => Promise<boolean>) | ((input: TState) => Promise<boolean>), error: AError): Promise<Result<TState>> {
+        if (this.isSuccess) {
+            try {
+                const pass = predicate.length === 0
+                    ? await (predicate as () => Promise<boolean>)()
+                    : await (predicate as (i: TState) => Promise<boolean>)(this.currentState);
+                if (!pass) this._reasons.push(error);
+            }
+            catch (e) {
+                this._reasons.push(new ExceptionalError(e));
+            }
+        }
+        return this;
+    }
+
 
     /**
      * Fails the pipeline **only if** the `predicate` evaluates to `true`.
@@ -154,21 +191,53 @@ export class Result {
      *
      * @returns **this** for chaining.
      */
-    failIf(predicate: (() => boolean) | ((input: any) => boolean), error: AError): Result {
-        try {
-            if (this.isSuccess) {
-                var res = predicate.length === 0 ? (predicate as () => any)() : (predicate as (input: any) => any)(this.currentState);
-                if (res === true) {
-                    this._reasons.push(error);
-                }
+    public failIf(predicate: (() => boolean) | ((input: TState) => boolean), error: AError): Result<TState> {
+        if (this.isSuccess) {
+            try {
+                const fail = predicate.length === 0
+                    ? (predicate as () => boolean)()
+                    : (predicate as (i: TState) => boolean)(this.currentState);
+                if (fail) this._reasons.push(error);
+            }
+            catch (e) {
+                this._reasons.push(new ExceptionalError(e));
             }
         }
-        catch (e) {
-            this._reasons.push(new ExceptionalError(e));
+        return this;
+    }
+
+
+
+    /**
+     * Fails the pipeline **only if** the `predicate` evaluates to `true`.
+     *
+     * @param predicate A function returning promise that returns boolean when awaited (optionally with `currentState` input).
+     * @param error      Error instance to push when the predicate **passes**.
+     *
+     * @returns **this** for chaining.
+     */
+    public async failIfAsync(predicate: (() => Promise<boolean>) | ((input: TState) => Promise<boolean>), error: AError): Promise<Result<TState>> {
+        if (this.isSuccess) {
+            try {
+                const fail = predicate.length === 0
+                    ? await (predicate as () => Promise<boolean>)()
+                    : await (predicate as (i: TState) => Promise<boolean>)(this.currentState);
+                if (fail) this._reasons.push(error);
+            }
+            catch (e) {
+                this._reasons.push(new ExceptionalError(e));
+            }
         }
-        finally {
-            return this;
-        }
+        return this;
+    }
+
+    /**
+     * Internal helper—overwrites the single‑slot {@link stateCache}.
+     * Not exposed publicly on purpose.
+     */
+    private cacheState(value: TState) {
+        this.stateCache.length = 0;
+        this.stateCache.push(value);
     }
 
 }
