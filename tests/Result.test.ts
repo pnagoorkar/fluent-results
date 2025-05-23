@@ -1,4 +1,3 @@
-import { ExceptionalError } from '../src/ExceptionalError';
 import { PromiseRejection } from '../src/PromiseRejection';
 import { Result } from '../src/Result';
 import { TestError } from './setup/TestError';
