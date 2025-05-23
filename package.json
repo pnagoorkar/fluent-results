@@ -1,6 +1,6 @@
 {
   "name": "fluent-results",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Tiny, dependency-free TypeScript implementation of the Fluent Results pattern for railway-oriented programming.",
   "keywords": [
     "result",
