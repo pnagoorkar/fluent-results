@@ -1,23 +1,24 @@
 # fluent-results
 
-*A tiny, dependency‑free helper for propagating success/failure without `try / catch` soup—heavily inspired by the .NET [FluentResults](https://github.com/altmann/FluentResults) pattern.*
+*A tiny, dependency‑free **generic** helper for composing success/failure pipelines in JavaScript & TypeScript; with first‑class **sync & async** fluent APIs. Heavily inspired by the .NET [FluentResults](https://github.com/altmann/FluentResults) pattern.*
 
 ---
 
-## ✨  Why?
+## ✨ Why?
 
-JavaScript exceptions work—but once business logic starts branching, nested `try` blocks and thrown errors quickly snowball. `fluent-results` lets you:
+JavaScript exceptions work, but once business logic starts branching, nested `try / catch` blocks become hard to follow. **fluent‑results** lets you:
 
-* Compose operations **fluently** (much like array chaining).
-* Keep **data and errors together** in a single object.
-* **Short‑circuit** downstream actions automatically after the first failure.
-* Pass the “current state” between steps without external variables.
+* Compose operations **fluently** (chain calls like `.bind(…)`).
+* Keep **data and errors together** in a single object.
+* **Short‑circuit** automatically after the first failure.
+* Pass the **current state** between steps without global variables.
+* Mix synchronous **and** Promise‑returning steps in the same chain.
 
-If you like functional pipelines or railway‑oriented programming, you’ll feel at home.
+If you enjoy functional pipelines or railway‑oriented programming, you’ll feel at home.
 
 ---
 
-## 🚀  Installation
+## 🚀 Installation
 
 ```bash
 npm i fluent-results
@@ -25,11 +26,11 @@ npm i fluent-results
 yarn add fluent-results
 ```
 
-The build outputs ES‑targeted JS and `.d.ts` typings (see `dist/` in the published package).
+The package ships ES modules **and** `.d.ts` typings so TypeScript *and* plain‑JavaScript editors get IntelliSense out‑of‑the‑box.
 
 ---
 
-## ⏱  Quick start
+## ⏱ Quick start (sync)
 
 ```ts
 import { Result } from 'fluent-results';
@@ -50,58 +51,101 @@ if (result.isSuccess) {
 }
 ```
 
-The same pattern drives the unit tests shipped with the repo.
+## ⏱ Quick start (async)
+
+```ts
+const userResult = await Result.tryAsync(() => fetch('/user/7').then(r => r.json()))        // Result<User>
+.then(result => result.okIfAsync(u => u.active, new AuthError('Inactive user'))    // guard
+.then(result => result.bindAsync(user => saveAudit(user.id)));                      // Result<AuditRow>
+
+if (userResult.isSuccess) {
+  console.log('Audit id:', userResult.currentState.id);
+} else {
+  console.error(userResult.errors);
+}
+```
 
 ---
 
-## 🛠  API surface
+## 🛠 API surface (sync & async)
 
-| Member                      | Purpose                                                                                                                                      | Example                                             |
-| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| `Result.try(action)`        | Kick off a pipeline, capturing any thrown exception as an `ExceptionalError`.                                                                | `Result.try(() => doWork())`                        |
-| `.bind(fn)`                 | Chain another operation. If the pipeline is currently failed, `fn` is **skipped**. The return value (if any) becomes the new `currentState`. | `.bind(prev => prev + 1)`                           |
-| `.okIf(predicate, error)`   | **Keep success** *only if* `predicate` returns `true`; otherwise add the provided `error`.                                                   | `.okIf(x => x !== 0, new DivideByZeroError())`      |
-| `.failIf(predicate, error)` | **Fail** *only if* `predicate` returns `true`; otherwise stay as‑is.                                                                         | `.failIf(() => isDuplicate(), new ConflictError())` |
-| Getters                     | `isSuccess`, `isFailed`, `currentState`, `reasons`, `errors`                                                                                 |                                                     |
+| Member | Purpose | Example |
+| ------ | ------- | ------- |
+| `Result.try(action)` | Kick off a **sync** pipeline; thrown exceptions are wrapped in `ExceptionalError`. | `Result.try(() => doWork())` |
+| `Result.tryAsync(action)` | Kick off an **async** pipeline; rejected promises become `PromiseRejection`. | `Result.tryAsync(() => fetch('/api').then(r => r.json()))` |
+| `.bind(fn)` | Chain a **synchronous** step; skipped when the pipeline is already failed. | `.bind(n => n + 1)` |
+| `.bindAsync(fn)` | Chain an **async** step that returns a Promise. | `.bindAsync(async n => n * 2)` |
+| `.okIf(pred, err)` | Keep success *only if* predicate returns `true`; otherwise push `err`. | `.okIf(x => x < 50, new RangeError())` |
+| `.okIfAsync(pred, err)` | Async predicate version. | `.okIfAsync(async x => await isValid(x), new ValidationError())` |
+| `.failIf(pred, err)` | Turn pipeline into failure *only if* predicate returns `true`. | `.failIf(() => isDuplicate(), new ConflictError())` |
+| `.failIfAsync(pred, err)` | Async predicate version. | `.failIfAsync(async () => await exists(), new ConflictError())` |
+| **Getters** | Inspect pipeline state. | `result.isSuccess`, `result.currentState`, `result.errors` |
 
-All errors extend `AError`; informational messages can inherit from `AReason`.
+Async variants return `Promise<Result<…>>`; you can freely interleave them with the sync ones.
+
 
 ---
 
-## 🧪  Developing locally
+## 🐛 Built-in error wrappers — errors as *first-class objects*
+
+A big advantage of the fluent-results pattern is that **every failure is represented by a real object** instead of a brittle string or numeric code.  
+That lets you pattern-match on error *types*, attach extra fields (status codes, correlation IDs, etc.), and serialize the whole `Result` for telemetry - while keeping the pipeline fluent.
+
+| Wrapper class | Added when… | Typical use |
+| ------------- | ----------- | ----------- |
+| `ExceptionalError` | A synchronous delegate **throws**. | Preserve the original stack trace & message while converting the exception into a typed reason the pipeline understands. |
+| `PromiseRejection` | A Promise inside `tryAsync`, `bindAsync`, `okIfAsync`, or `failIfAsync` **rejects**. | Surface async failures in exactly the same, type-safe way as sync ones. |
+
+Because failures are objects, you can easily branch on domain-specific subclasses:
+
+```ts
+const result = await Result.tryAsync(() => fetch("/myControlledAccessEndpoint"));
+                           .then(result => result.failIf(response => response.status === 403, new AuthError(response)))
+                           .then(result => result.bind(...))
+                           .then(result => result.okIf(...))
+                           .then(result => result.bind(...));
+if (result.isFailed) {
+  const authIssues = result.errors.filter(e => e instanceof AuthError);
+  if (authIssues.length) {
+    console.log(`user not authorized to access endpoint: ${authIssues[0].response.url}`);
+  }
+}
+```
+Extend **`AError`** to introduce your own domain‑specific failures.
+
+---
+
+## 🧪 Developing locally
 
 ```bash
 git clone https://github.com/pnagoorkar/fluent-results.git
 cd fluent-results
-npm ci            # install exact dev deps
-npm test          # Jest unit tests
-npm run build     # emits ES module + d.ts into /dist
+npm ci           # exact dev dependencies
+npm test         # Jest suite
+npm run build    # emits ES modules + type declarations into /dist
 ```
 
-The project uses **TypeScript 5**, **Jest 29** and no runtime deps, keeping the bundle footprint minimal.
-
-Formatting is left to your editor’s prettier/eslint setup; no strict lint config is enforced yet.
 
 ---
 
-## 🤝  Contributing
+## 🤝 Contributing
 
-Pull requests welcome! If you have:
+1. **Bug** – open an issue & add a failing test in your PR.  
+2. **Feature** – start with an issue so we can discuss naming and scope.
 
-1. **A bug fix** – add or expand a unit test reproducing the issue.
-2. **A new feature** – open an issue first so we can discuss naming & scope.
+PRs are welcome!
 
 ---
 
-## 📜  Licence
+## 📜 Licence
 
 [MIT](LICENSE) – do whatever you want; attribution appreciated but not required.
 
 ---
 
-## 🙏  Credits
+## 🙏 Credits
 
-* Pattern & naming lifted from **altmann/FluentResults** – thanks for the inspiration.
-* Built with ❤️ by [@pnagoorkar](https://github.com/pnagoorkar).
+Pattern & naming inspired by [FluentResults for .NET](https://github.com/altmann/FluentResults).  
+Built with ❤️ by [@pnagoorkar](https://github.com/pnagoorkar).
 
 Happy fluent coding!
