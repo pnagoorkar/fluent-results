@@ -1,6 +1,7 @@
 import { AReason } from './AReason';
 import { AError } from './AError';
 import { ExceptionalError } from './ExceptionalError';
+import { PromiseRejection } from './PromiseRejection';
 
 /**
  * `Result` represents the outcome **and** the flowing state of a pipeline that can
@@ -77,8 +78,7 @@ export class Result<TState = any> {
     public static async tryAsync<T>(action: () => Promise<T>): Promise<Result<T>> {
         const result = new Result<T>();
         try {
-            const out = await action();
-            result.cacheState(out);
+            await action().then(value => result.cacheState(value)).catch(reason => result._reasons.push(new PromiseRejection(reason)));
         }
         catch (e) {
             result._reasons.push(new ExceptionalError(e));
@@ -123,11 +123,11 @@ export class Result<TState = any> {
     public async bindAsync<TRet>(func: (() => Promise<TRet>) | ((input: TState) => Promise<TRet>)): Promise<Result<TRet>> {
         if (this.isSuccess) {
             try {
-                const out = func.length === 0
-                    ? await (func as () => Promise<TRet>)()
-                    : await (func as (i: TState) => Promise<TRet>)(this.currentState);
+                const promise = func.length === 0
+                    ? (func as () => Promise<TRet>)()
+                    : (func as (i: TState) => Promise<TRet>)(this.currentState);
 
-                (this as unknown as Result<TRet>).cacheState(out);
+                await promise.then(value => (this as unknown as Result<TRet>).cacheState(value)).catch(reason => this._reasons.push(new PromiseRejection(reason)));
             }
             catch (e) {
                 this._reasons.push(new ExceptionalError(e));

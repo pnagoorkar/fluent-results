@@ -1,3 +1,5 @@
+import { ExceptionalError } from '../src/ExceptionalError';
+import { PromiseRejection } from '../src/PromiseRejection';
 import { Result } from '../src/Result';
 import { TestError } from './setup/TestError';
 
@@ -35,6 +37,20 @@ describe('Result.tryAsync', () => {
         expect(result.isSuccess).toBe(false);
         expect(result.currentState).toBe(42);
     });
+
+    it("should treat rejections as failures", async () => {
+        const result = await Result.tryAsync(() => new Promise<number>((resolve, reject) => reject()));
+        expect(result).not.toBeNull();
+        expect(result.isSuccess).toBe(false);
+    });
+
+    it("should capture rejections reasons", async () => {
+        const result = await Result.tryAsync(() => new Promise<number>((resolve, reject) => reject("Some random reason")));
+        expect(result).not.toBeNull();
+        expect(result.isSuccess).toBe(false);
+        expect(result.errors.filter(err => err instanceof PromiseRejection && (err as PromiseRejection).reason === "Some random reason").length).toBe(1);
+    });
+
 })
 
 describe('Result.bind', () => {
@@ -125,6 +141,19 @@ describe('Result.bindAsync', () => {
         expect(result).not.toBeNull();
         expect(result.isSuccess).toBe(true);
         expect(result.currentState).toBe(43);
+    });
+
+    it("should treat rejections as failures", async () => {
+        const result = await Result.try(() => { }).bindAsync(() => new Promise<number>((resolve, reject) => reject()));
+        expect(result).not.toBeNull();
+        expect(result.isSuccess).toBe(false);
+    });
+
+    it("should capture rejections reasons", async () => {
+        const result = await Result.try(() => { }).bindAsync(() => new Promise<number>((resolve, reject) => reject("Some random reason")));
+        expect(result).not.toBeNull();
+        expect(result.isSuccess).toBe(false);
+        expect(result.errors.filter(err => err instanceof PromiseRejection && (err as PromiseRejection).reason === "Some random reason").length).toBe(1);
     });
 });
 
