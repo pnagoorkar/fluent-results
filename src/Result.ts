@@ -3,20 +3,12 @@ import { AError } from './AError';
 import { ExceptionalError } from './ExceptionalError';
 import { PromiseRejection } from './PromiseRejection';
 
-/**
- * `Result` represents the outcome **and** the flowing state of a pipeline that can
- * short‑circuit on the first error ("railway‑oriented programming").
- * 
- * A `Result` starts out *successful* and accumulates {@link AReason | reasons};
- * any {@link AError | error} automatically flips the result into the *failed* state.
- *
- */
-export class Result<TState = any> {
+export abstract class AResult {
 
     /** Informational messages *and* errors gathered so far. */
     protected _reasons: AReason[] = [];
     /** Single‑slot cache for the latest successful value. */
-    private stateCache: TState[] = [];
+    protected stateCache: any[] = [];
     /** `true` when *no* {@link AError} has been recorded. */
     public get isSuccess(): boolean {
         return !this.isFailed;
@@ -25,6 +17,57 @@ export class Result<TState = any> {
     public get isFailed(): boolean {
         return this._reasons.some((r) => r instanceof AError);
     }
+
+    private _routineName: string = "";
+
+    /**
+     * A descriptive name for the routine, useful for logging or debugging.
+     */
+    public get routineName(): string {
+        return this._routineName;
+    }
+
+    private _parent?: AResult;
+    private _child?: AResult;
+
+    /**
+     * The parent result that created this result (usually as to execute a contingent routine)
+     */
+    public get parent(): AResult | undefined {
+        return this._parent;
+    }
+
+    /**
+     * A child that was created as a result of execution of a contingent path
+     */
+    public get child(): AResult | undefined {
+        return this._child;
+    }
+
+    protected set child(child: AResult) {
+        this._child = child;
+    }
+
+    /**
+     * @param routineName A descriptive name for the routine, useful for logging or debugging.
+     * @param [parent] The parent result that created this result (usually as to execute a contingent routine)
+     */
+    constructor(routineName: string, parent?: AResult) {
+        this._routineName = routineName;
+        this._parent = parent;
+
+    }
+
+}
+/**
+ * `Result` represents the outcome **and** the flowing state of a pipeline that can
+ * short‑circuit on the first error ("railway‑oriented programming").
+ * 
+ * A `Result` starts out *successful* and accumulates {@link AReason | reasons};
+ * any {@link AError | error} automatically flips the result into the *failed* state.
+ *
+ */
+export class Result<TState = any> extends AResult {
 
     /**
      * The most recent value produced by the pipeline.
@@ -53,9 +96,10 @@ export class Result<TState = any> {
    * • If it completes successfully, the return value is stored as {@link currentState}.
    *
    * @param action A synchronous delegate that may return a value and/or throw.
+   * @param routineName A descriptive name for the routine, useful for logging or debugging.
    */
-    public static try<T>(action: () => T): Result<T> {
-        const result = new Result<T>();
+    public static try<T>(action: () => T, routineName: string): Result<T> {
+        const result = new Result<T>(routineName);
 
         try {
             result.cacheState(action());
@@ -74,9 +118,10 @@ export class Result<TState = any> {
    * • If it completes successfully, the awaited outcome is stored as {@link currentState}.
    *
    * @param action A synchronous delegate that may return a value and/or throw.
+   * @param routineName A descriptive name for the routine, useful for logging or debugging.
    */
-    public static async tryAsync<T>(action: () => Promise<T>): Promise<Result<T>> {
-        const result = new Result<T>();
+    public static async tryAsync<T>(action: () => Promise<T>, routineName: string): Promise<Result<T>> {
+        const result = new Result<T>(routineName);
         try {
             await action().then(value => result.cacheState(value)).catch(reason => result._reasons.push(new PromiseRejection(reason)));
         }
@@ -188,16 +233,28 @@ export class Result<TState = any> {
      *
      * @param predicate  Condition to evaluate (optionally with `currentState` input).
      * @param error      Error instance to push when the predicate **passes**.
+     * @param [contingency] - Optional object defining a contingent route.
+     * @param next.func - A function to be executed if {@link predicate} evaluates to false
+     * @param next.routineName - A descriptive name for the routine, useful for logging or debugging.
      *
      * @returns **this** for chaining.
      */
-    public failIf(predicate: (() => boolean) | ((input: TState) => boolean), error: AError): Result<TState> {
+    public failIf(predicate: (() => boolean) | ((input: TState) => boolean),
+        error: AError,
+        contingency?: { func: (nextResult: Result<TState>) => void, routineName: string }): Result<TState> {
         if (this.isSuccess) {
             try {
                 const fail = predicate.length === 0
                     ? (predicate as () => boolean)()
                     : (predicate as (i: TState) => boolean)(this.currentState);
-                if (fail) this._reasons.push(error);
+                if (fail) {
+                    this._reasons.push(error);
+                    if (contingency) {
+                        let child = new Result<TState>(contingency.routineName, this);
+                        this.child = child;
+                        contingency.func(child);
+                    }
+                }
             }
             catch (e) {
                 this._reasons.push(new ExceptionalError(e));
@@ -213,16 +270,28 @@ export class Result<TState = any> {
      *
      * @param predicate A function returning promise that returns boolean when awaited (optionally with `currentState` input).
      * @param error      Error instance to push when the predicate **passes**.
+     * @param [contingency] - Optional object defining a contingent route.
+     * @param next.func - A function to be executed if {@link predicate} evaluates to false
+     * @param next.routineName - A descriptive name for the routine, useful for logging or debugging.
      *
      * @returns **this** for chaining.
      */
-    public async failIfAsync(predicate: (() => Promise<boolean>) | ((input: TState) => Promise<boolean>), error: AError): Promise<Result<TState>> {
+    public async failIfAsync(predicate: (() => Promise<boolean>) | ((input: TState) => Promise<boolean>),
+        error: AError,
+        contingency?: { func: (nextResult: Result<TState>) => void, routineName: string }): Promise<Result<TState>> {
         if (this.isSuccess) {
             try {
                 const fail = predicate.length === 0
                     ? await (predicate as () => Promise<boolean>)()
                     : await (predicate as (i: TState) => Promise<boolean>)(this.currentState);
-                if (fail) this._reasons.push(error);
+                if (fail) {
+                    this._reasons.push(error);
+                    if (contingency) {
+                        let child = new Result<TState>(contingency.routineName, this);
+                        this.child = child;
+                        contingency.func(child);
+                    }
+                }
             }
             catch (e) {
                 this._reasons.push(new ExceptionalError(e));
