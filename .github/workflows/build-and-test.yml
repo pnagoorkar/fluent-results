@@ -20,29 +20,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 18
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build TypeScript
-        run: npm run build
-
-      - name: Run tests with coverage
-        run: npm test -- --coverage
-
-      - name: Upload coverage report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report
-          path: coverage
-
-      - name: Upload to Codecov
-        uses: codecov/codecov-action@v4
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-
-      - name: Tag commit with version
+      
+      - name: Determine version
         if: github.ref == 'refs/heads/main'
         id: set_version
         run: |
@@ -75,19 +54,38 @@ jobs:
           BUILD_TAG="v${CURRENT_VERSION}"
           echo "Current version tag - $BUILD_TAG"
 
+          echo "version=$BUILD_TAG" >> $GITHUB_OUTPUT
+
+          npm version $CURRENT_VERSION --no-git-tag-version        
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build TypeScript
+        run: npm run build
+
+      - name: Run tests with coverage
+        run: npm test -- --coverage
+
+      - name: Tag commit with version
+        if: github.ref == 'refs/heads/main'
+        run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git tag "$BUILD_TAG" -m "Build $BUILD_TAG"
-          git push origin "$BUILD_TAG"
+          git tag ${{ steps.set_version.outputs.version }} -m "Build ${{ steps.set_version.outputs.version }}"
+          git push origin ${{ steps.set_version.outputs.version }}
 
-          echo "version=$BUILD_TAG" >> $GITHUB_OUTPUT
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage
 
-      - name: Publish private package to npmjs
-        if: github.ref == 'refs/heads/main'
-        run: |
-          npm version ${{ steps.set_version.outputs.version }} --no-git-tag-version
-          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
-          npm publish --access restricted
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
 
 
