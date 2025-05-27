@@ -83,10 +83,11 @@ jobs:
 
           echo "version=$BUILD_TAG" >> $GITHUB_OUTPUT
 
-      - name: Publish to GitHub Packages
+      - name: Publish private package to npmjs
         if: github.ref == 'refs/heads/main'
         run: |
           npm version ${{ steps.set_version.outputs.version }} --no-git-tag-version
-          npm config set //npm.pkg.github.com/:_authToken=${{ secrets.GITHUB_TOKEN }}
-          npm publish --registry=https://npm.pkg.github.com/
+          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
+          npm publish --access restricted
+
 
