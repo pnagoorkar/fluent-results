@@ -1,5 +1,10 @@
 # fluent-results
 
+[![Build and Test](https://github.com/pnagoorkar/fluent-results/actions/workflows/build-and-test.yml/badge.svg)](https://github.com/pnagoorkar/fluent-results/actions/workflows/build-and-test.yml)
+
+[![codecov](https://codecov.io/gh/pnagoorkar/fluent-results/branch/main/graph/badge.svg)](https://codecov.io/gh/pnagoorkar/fluent-results)
+
+
 *A tiny, dependency‑free **generic** helper for composing success/failure pipelines in JavaScript & TypeScript; with first‑class **sync & async** fluent APIs. Heavily inspired by the .NET [FluentResults](https://github.com/altmann/FluentResults) pattern.*
 
 ---
