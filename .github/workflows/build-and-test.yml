@@ -6,7 +6,7 @@ on:
       - '**'
 
 permissions:
-  contents: write  # Needed to push version tag
+  contents: write  # Needed to push version tag and upload release asset
 
 jobs:
   build-and-test:
@@ -44,6 +44,7 @@ jobs:
 
       - name: Tag commit with version
         if: github.ref == 'refs/heads/main'
+        id: set_version
         run: |
           set -euo pipefail
 
@@ -56,16 +57,13 @@ jobs:
           # List all tags matching the pattern "v${YEAR}.${WEEK}.*"
           TAG_LIST=$(git tag -l "v${YEAR}.${WEEK}.*")
 
-          
           if [ -z "$TAG_LIST" ]; then
               echo "No build found for v${YEAR}.${WEEK}.*"
               echo "Setting build of the week to 1"
               BUILD_OF_THE_WEEK=1
           else
               EXTRACTED_NUMBERS=$(echo "$TAG_LIST" | grep -o "[0-9]\+$")
-
               SORTED_NUMBERS=$(echo "$EXTRACTED_NUMBERS" | sort -nr)
-
               PREVIOUS_BUILD_OF_THE_WEEK=$(echo "$SORTED_NUMBERS" | head -n1)
               echo "Previous build of the week: $PREVIOUS_BUILD_OF_THE_WEEK"
 
@@ -82,3 +80,19 @@ jobs:
 
           git tag "$BUILD_TAG" -m "Build $BUILD_TAG"
           git push origin "$BUILD_TAG"
+
+          echo "version=$BUILD_TAG" >> $GITHUB_OUTPUT
+
+      - name: Zip dist folder
+        if: github.ref == 'refs/heads/main'
+        run: |
+          zip -r dist.zip dist
+
+      - name: Upload dist.zip to GitHub Release
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.set_version.outputs.version }}
+          files: dist.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
