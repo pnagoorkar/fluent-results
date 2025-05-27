@@ -83,21 +83,10 @@ jobs:
 
           echo "version=$BUILD_TAG" >> $GITHUB_OUTPUT
 
-      - name: Zip dist folder with versioned name
+      - name: Publish to GitHub Packages
         if: github.ref == 'refs/heads/main'
         run: |
-          ZIP_NAME="dist-${{ steps.set_version.outputs.version }}.zip"
-          zip -r "$ZIP_NAME" dist
-          echo "ZIP_NAME=$ZIP_NAME" >> $GITHUB_ENV
-
-      - name: Upload versioned dist zip to GitHub package manager
-        if: github.ref == 'refs/heads/main'
-        run: |
-          set -euo pipefail
-          gh release create ${{ steps.set_version.outputs.version }} "$ZIP_NAME" \
-            --repo ${{ github.repository }} \
-            --title "Build ${{ steps.set_version.outputs.version }}" \
-            --notes "Automated package upload"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          npm version ${{ steps.set_version.outputs.version }} --no-git-tag-version
+          npm config set //npm.pkg.github.com/:_authToken=${{ secrets.GITHUB_TOKEN }}
+          npm publish --registry=https://npm.pkg.github.com/
 
