@@ -1,9 +1,9 @@
-name: Build and Test
+name: Main
 
 on:
   push:
     branches:
-      - '**'
+      - main
 
 permissions:
   contents: write  # Needed to push version tag and upload release asset
@@ -22,7 +22,6 @@ jobs:
           node-version: 18
       
       - name: Determine version
-        if: github.ref == 'refs/heads/main'
         id: set_version
         run: |
           set -euo pipefail
@@ -68,7 +67,6 @@ jobs:
         run: npm test -- --coverage
 
       - name: Tag commit with version
-        if: github.ref == 'refs/heads/main'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -77,7 +75,6 @@ jobs:
           git push origin ${{ steps.set_version.outputs.version }}
 
       - name: Upload coverage report
-        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
