@@ -1,0 +1,53 @@
+name: Release
+
+on:
+  push: 
+    branches:
+      - release
+
+jobs:
+  publish-to-npm:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Required to fetch tags
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+      
+      - name: Verify most recent commit has tagged with version
+        run: |
+          set -euo pipefail
+
+          TAGS=$(git tag --points-at HEAD)
+          echo "All tags pointing to HEAD: $TAGS"  
+
+          # Filter tags that match version pattern vYYYY.WK.B+
+          VERSION_TAGS=$(echo "$TAGS" | grep -E '^v[0-9]{4}\.[0-9]+\.[0-9]+$' || true)
+          
+          if [[ -z "$VERSION_TAGS" ]]; then
+          echo "No version tag (vYYYY.WK.B+) found pointing to HEAD. Aborting."
+          exit 1
+          fi  
+
+          COUNT=$(echo "$VERSION_TAGS" | wc -l)
+
+          if [[ "$COUNT" -gt 1 ]]; then
+          echo "Multiple version tags found pointing to HEAD:"
+          echo "$VERSION_TAGS"
+          echo "Aborting to avoid ambiguity."
+          exit 1
+          fi
+
+          TAG=$(echo "$VERSION_TAGS" | head -n 1)
+          echo "Using version tag: $TAG"
+          CURRENT_VERSION=${TAG#v};
+          
+          echo "version=${CURRENT_VERSION}" >> "$GITHUB_OUTPUT"
+
+          npm version $CURRENT_VERSION --no-git-tag-version
