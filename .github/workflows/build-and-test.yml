@@ -3,7 +3,10 @@ name: Build and Test
 on:
   push:
     branches:
-      - '**'   # Trigger on any branch
+      - '**'
+
+permissions:
+  contents: write  # Needed to push version tag
 
 jobs:
   build-and-test:
@@ -16,7 +19,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18   
+          node-version: 18
 
       - name: Install dependencies
         run: npm ci
@@ -38,3 +41,44 @@ jobs:
         uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Tag commit with version
+        if: github.ref == 'refs/heads/main'
+        run: |
+          set -euo pipefail
+
+          # Get current year and ISO week number
+          YEAR=$(date +%Y)
+          WEEK=$(date +%V)
+
+          git fetch --tags
+
+          # List all tags matching the pattern "v${YEAR}.${WEEK}.*"
+          TAG_LIST=$(git tag -l "v${YEAR}.${WEEK}.*")
+
+          
+          if [ -z "$TAG_LIST" ]; then
+              echo "No build found for v${YEAR}.${WEEK}.*"
+              echo "Setting build of the week to 1"
+              BUILD_OF_THE_WEEK=1
+          else
+              EXTRACTED_NUMBERS=$(echo "$TAG_LIST" | grep -o "[0-9]\+$")
+
+              SORTED_NUMBERS=$(echo "$EXTRACTED_NUMBERS" | sort -nr)
+
+              PREVIOUS_BUILD_OF_THE_WEEK=$(echo "$SORTED_NUMBERS" | head -n1)
+              echo "Previous build of the week: $PREVIOUS_BUILD_OF_THE_WEEK"
+
+              BUILD_OF_THE_WEEK=$((PREVIOUS_BUILD_OF_THE_WEEK + 1))
+          fi
+
+          echo "Build of the week - $BUILD_OF_THE_WEEK"
+          CURRENT_VERSION="${YEAR}.${WEEK}.${BUILD_OF_THE_WEEK}"
+          BUILD_TAG="v${CURRENT_VERSION}"
+          echo "Current version tag - $BUILD_TAG"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git tag "$BUILD_TAG" -m "Build $BUILD_TAG"
+          git push origin "$BUILD_TAG"
