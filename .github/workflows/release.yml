@@ -23,6 +23,8 @@ jobs:
       - name: Verify most recent commit has tagged with version
         run: |
           set -euo pipefail
+          
+          git fetch --tags
 
           TAGS=$(git tag --points-at HEAD)
           echo "All tags pointing to HEAD: $TAGS"  
@@ -47,7 +49,7 @@ jobs:
           TAG=$(echo "$VERSION_TAGS" | head -n 1)
           echo "Using version tag: $TAG"
           CURRENT_VERSION=${TAG#v};
-          
+
           echo "version=${CURRENT_VERSION}" >> "$GITHUB_OUTPUT"
 
           npm version $CURRENT_VERSION --no-git-tag-version
