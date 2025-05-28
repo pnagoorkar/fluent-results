@@ -42,3 +42,28 @@ jobs:
           echo "version=${CURRENT_VERSION}" >> "$GITHUB_OUTPUT"
 
           npm version $CURRENT_VERSION --no-git-tag-version
+      - name: Publish to npm
+        run: |
+          set -euo pipefail
+
+          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
+          npm publish
+      - name: Create github release
+        run: |
+          set -euo pipefail
+          
+          # Get current commit SHA
+          MERGE_COMMIT=$(git rev-parse HEAD)          
+
+          # Find merged PR associated with that commit
+          PR_NUMBER=$(gh pr list --state merged --base release --json number,mergeCommit \
+            -q ".[] | select(.mergeCommit.oid == \"$MERGE_COMMIT\") | .number")
+            
+          # Get PR description as release notes
+          PR_BODY=$(gh pr view "$PR_NUMBER" --json body -q .body)
+          
+          
+          gh release create "$TAG" --title "$TAG" --notes "$PR_BODY"
+
+
+    

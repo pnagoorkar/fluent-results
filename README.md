@@ -1,6 +1,6 @@
 # fluent-results
 
-[![Build and Test](https://github.com/pnagoorkar/fluent-results/actions/workflows/build-and-test.yml/badge.svg)](https://github.com/pnagoorkar/fluent-results/actions/workflows/build-and-test.yml)
+[![Build and Test - Main](https://github.com/pnagoorkar/fluent-results/actions/workflows/main.yml/badge.svg)](https://github.com/pnagoorkar/fluent-results/actions/workflows/main.yml)
 
 [![codecov](https://codecov.io/gh/pnagoorkar/fluent-results/branch/main/graph/badge.svg)](https://codecov.io/gh/pnagoorkar/fluent-results)
 
@@ -18,6 +18,7 @@ JavaScript exceptions work, but once business logic starts branching, nested `tr
 * **Short‑circuit** automatically after the first failure.
 * Pass the **current state** between steps without global variables.
 * Mix synchronous **and** Promise‑returning steps in the same chain.
+* Stay on the **happy path** while you can and swith to a **contingent path** when you can't.
 
 If you enjoy functional pipelines or railway‑oriented programming, you’ll feel at home.
 
@@ -76,18 +77,17 @@ if (userResult.isSuccess) {
 
 | Member | Purpose | Example |
 | ------ | ------- | ------- |
-| `Result.try(action)` | Kick off a **sync** pipeline; thrown exceptions are wrapped in `ExceptionalError`. | `Result.try(() => doWork())` |
-| `Result.tryAsync(action)` | Kick off an **async** pipeline; rejected promises become `PromiseRejection`. | `Result.tryAsync(() => fetch('/api').then(r => r.json()))` |
+| `Result.try(action, routineName)` | Kick off a **sync** pipeline; thrown exceptions are wrapped in `ExceptionalError`. | `Result.try(() => doWork(), "My primary routine")` |
+| `Result.tryAsync(action, routineName)` | Kick off an **async** pipeline; rejected promises become `PromiseRejection`. | `Result.tryAsync(() => fetch('/api').then(r => r.json()), "My primary routine")` |
 | `.bind(fn)` | Chain a **synchronous** step; skipped when the pipeline is already failed. | `.bind(n => n + 1)` |
 | `.bindAsync(fn)` | Chain an **async** step that returns a Promise. | `.bindAsync(async n => n * 2)` |
 | `.okIf(pred, err)` | Keep success *only if* predicate returns `true`; otherwise push `err`. | `.okIf(x => x < 50, new RangeError())` |
 | `.okIfAsync(pred, err)` | Async predicate version. | `.okIfAsync(async x => await isValid(x), new ValidationError())` |
-| `.failIf(pred, err)` | Turn pipeline into failure *only if* predicate returns `true`. | `.failIf(() => isDuplicate(), new ConflictError())` |
-| `.failIfAsync(pred, err)` | Async predicate version. | `.failIfAsync(async () => await exists(), new ConflictError())` |
-| **Getters** | Inspect pipeline state. | `result.isSuccess`, `result.currentState`, `result.errors` |
+| `.failIf(pred, err, contingency)` | Turn pipeline into failure *only if* predicate returns `true`. Optionally define a contingent routine that will be execute if the predicate evaluates to true | `.failIf(() => isDuplicate(), new ConflictError())` |
+| `.failIfAsync(pred, err, contingency)` | Async predicate version. Optionally define a contingent routine that will be execute if the predicate evaluates to true | `.failIfAsync(async () => await exists(), new ConflictError())` |
+| **Getters** | Inspect pipeline state and trace execution path | `result.isSuccess`, `result.currentState`, `result.errors`, `result.child`, `result.parent` |
 
 Async variants return `Promise<Result<…>>`; you can freely interleave them with the sync ones.
-
 
 ---
 
@@ -117,6 +117,23 @@ if (result.isFailed) {
 }
 ```
 Extend **`AError`** to introduce your own domain‑specific failures.
+
+---
+## 🛣 Detouring on contingencies (child ↔ parent)
+Stay on the happy path while you can; continue executing on a contingent path if you can't
+```ts
+const result = Result.try(() => loadCache(), "Load from cache")
+                     .failIf(cache => cache === null,                                   // contingency trigger
+                             new CacheMissError(),                                      // error pushed onto the main Result
+                             {func: fetchFromServer, routineName: "Load from server"})  // contingency
+                     .bind(cache => cache.getData());                                   // will never run
+  const data = result.isSuccess ? result.currentState : result.child.currentState;
+
+// ── relationships ─────────────────────────────────────────────
+//  result.child  → Result fetched from server
+//  result.child.parent === result  ✅
+
+```
 
 ---
 
