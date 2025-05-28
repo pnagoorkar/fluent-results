@@ -21,6 +21,7 @@ jobs:
           node-version: 18
       
       - name: Verify most recent commit has tagged with version
+        id: get_tag
         run: |
           set -euo pipefail
           
@@ -69,7 +70,7 @@ jobs:
           PR_BODY=$(gh pr view "$PR_NUMBER" --json body -q .body)
           
           
-          gh release create "$TAG" --title "$TAG" --notes "$PR_BODY"
+          gh release create v${{ steps.get_tag.outputs.version }} --title v${{ steps.get_tag.outputs.version }} --notes "$PR_BODY"
 
 
     
