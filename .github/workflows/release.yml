@@ -45,7 +45,7 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-        
+
       - name: Publish to npm
         run: |
           set -euo pipefail
@@ -53,6 +53,8 @@ jobs:
           echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
           npm publish
       - name: Create github release
+        env:
+            GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           
