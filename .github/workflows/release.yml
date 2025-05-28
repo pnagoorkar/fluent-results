@@ -23,10 +23,13 @@ jobs:
       - name: Verify most recent commit has tagged with version
         run: |
           set -euo pipefail
-          
+
           git fetch --tags
 
-          TAGS=$(git tag --points-at HEAD)
+          PREV_COMMIT=$(git rev-parse HEAD^)
+          echo "Looking for tags on commit: $PREV_COMMIT"
+
+          TAGS=$(git tag --points-at "$PREV_COMMIT")
           echo "All tags pointing to HEAD: $TAGS"  
 
           # Filter tags that match version pattern vYYYY.WK.B+
