@@ -4,6 +4,9 @@ on:
   push: 
     branches:
       - release
+      
+permissions:
+  contents: write  # Needed to push version tag and upload release asset
 
 jobs:
   publish-to-npm:
