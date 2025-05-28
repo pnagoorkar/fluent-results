@@ -24,7 +24,12 @@ jobs:
         run: |
           set -euo pipefail
 
-          TAGS=$(git tag --points-at HEAD)
+          git fetch --tags
+
+          PREV_COMMIT=$(git rev-parse HEAD^)
+          echo "Looking for tags on commit: $PREV_COMMIT"
+
+          TAGS=$(git tag --points-at "$PREV_COMMIT")
           echo "All tags pointing to HEAD: $TAGS"  
 
           # Filter tags that match version pattern vYYYY.WK.B+
@@ -47,7 +52,7 @@ jobs:
           TAG=$(echo "$VERSION_TAGS" | head -n 1)
           echo "Using version tag: $TAG"
           CURRENT_VERSION=${TAG#v};
-          
+
           echo "version=${CURRENT_VERSION}" >> "$GITHUB_OUTPUT"
 
           npm version $CURRENT_VERSION --no-git-tag-version
