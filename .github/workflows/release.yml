@@ -42,3 +42,11 @@ jobs:
           echo "version=${CURRENT_VERSION}" >> "$GITHUB_OUTPUT"
 
           npm version $CURRENT_VERSION --no-git-tag-version
+      - name:
+        run: |
+          set -euo pipefail
+          
+          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
+          npm publish
+
+    
