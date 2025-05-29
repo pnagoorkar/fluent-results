@@ -1,6 +1,6 @@
 {
   "name": "fluent-results",
-  "version": "1.0.1",
+  "version": "0.0.0",
   "description": "Tiny, dependency-free TypeScript implementation of the Fluent Results pattern for railway-oriented programming.",
   "keywords": [
     "result",
@@ -26,13 +26,6 @@
   "sideEffects": false,
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "exports": {
-    ".": {
-      "require": "./dist/index.js",
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
-    }
-  },
   "files": [
     "dist",
     "README.md",
